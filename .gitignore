@@ -1,5 +1,5 @@
 # mwd added bbedit projects
-*.bbprojectd
+*.bbprojectd/
 # Prerequisites
 *.d
 
