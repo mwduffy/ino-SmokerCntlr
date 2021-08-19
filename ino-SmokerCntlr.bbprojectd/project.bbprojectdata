@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>HierarchyData</key>
+	<array>
+		<string>C9CBD156-1554-494F-9E89-6EA27D8D9429</string>
+	</array>
+	<key>ProjectItems</key>
+	<dict>
+		<key>C9CBD156-1554-494F-9E89-6EA27D8D9429</key>
+		<dict>
+			<key>ItemData</key>
+			<dict>
+				<key>BookmarkData</key>
+				<data>
+				Ym9va7gCAAAAAAQQMAAAALkisj2tX2ISLKtxc/OPJiIf
+				pvDyaCutXzyteJPuyXu3tAEAAAQAAAADAwAAAAgAKAUA
+				AAABAQAAVXNlcnMAAAAEAAAAAQEAAG1pa2UIAAAAAQEA
+				AGdpdC1wcm9qDwAAAAEBAABpbm8tU21va2VyQ250bHIA
+				EAAAAAEGAAAQAAAAIAAAACwAAAA8AAAACAAAAAQDAAA2
+				YgYAAAAAAAgAAAAEAwAAxagJAAAAAAAIAAAABAMAAKre
+				NQIDAAAACAAAAAQDAAAG4VcCAwAAABAAAAABBgAAbAAA
+				AHwAAACMAAAAnAAAAAgAAAAABAAAQcNndGqbHkAYAAAA
+				AQIAAAIAAAAAAAAADwAAAAAAAAAAAAAAAAAAAAgAAAAE
+				AwAAAgAAAAAAAAAEAAAAAwMAAPUBAAAIAAAAAQkAAGZp
+				bGU6Ly8vDAAAAAEBAABNYWNpbnRvc2ggSEQIAAAABAMA
+				AACgIGh0AAAACAAAAAAEAABBwd5EgAAAACQAAAABAQAA
+				RkVDMkVFREUtNzQ0NS0zNjVDLUI5QTYtQjY1NDY3ODZD
+				MEYyGAAAAAECAACBAAAAAQAAAO8TAAABAAAAAAAAAAAA
+				AAABAAAAAQEAAC8AAAAAAAAAAQUAAMwAAAD+////AQAA
+				AAAAAAAQAAAABBAAAFQAAAAAAAAABRAAAKwAAAAAAAAA
+				EBAAANQAAAAAAAAAQBAAAMQAAAAAAAAAAiAAAKABAAAA
+				AAAABSAAABABAAAAAAAAECAAACABAAAAAAAAESAAAFQB
+				AAAAAAAAEiAAADQBAAAAAAAAEyAAAEQBAAAAAAAAICAA
+				AIABAAAAAAAAMCAAAKwBAAAAAAAAAcAAAPQAAAAAAAAA
+				EcAAACAAAAAAAAAAEsAAAAQBAAAAAAAAENAAAAQAAAAA
+				AAAA
+				</data>
+				<key>FileURL</key>
+				<string>file:///Users/mike/git-proj/ino-SmokerCntlr/</string>
+				<key>HasSecurityScope</key>
+				<true/>
+				<key>RelativePath</key>
+				<string>./</string>
+				<key>TypeID</key>
+				<string>_CFileLocator</string>
+				<key>Version</key>
+				<integer>1</integer>
+			</dict>
+			<key>ItemName</key>
+			<string>ino-SmokerCntlr</string>
+			<key>ItemType</key>
+			<string>FolderReference</string>
+		</dict>
+	</dict>
+	<key>com.barebones.DocumentFormatVersion</key>
+	<integer>5</integer>
+	<key>com.barebones.DocumentType</key>
+	<string>Project</string>
+</dict>
+</plist>
