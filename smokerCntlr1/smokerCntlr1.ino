@@ -49,8 +49,12 @@
 
 #include <LiquidCrystal.h>
 
-//#define EXTPOWER	// Smoker supplies external power to the Arduino
+#define PROGRAM_NAME "SmokerCntlr  V01"
+#define EXTPOWER		// The smoker will provide external power to the Arduino
 #define DEBUG 	// Serial output for debugging
+#define DEBUG_LVL	1	// Extra output to the Serial interface
+//#define DISPLAY_ADC_READING	// select ADC values (temperature is default)
+//#define BREADBOARD		// select breadboard layout (soldered board is default)
 
 /* 
 	Declare types for things that vary by platform 
@@ -92,19 +96,48 @@ typedef struct {
 	t_temp stove_target_temp;	// target temp for comparison to stove temp
 	t_temp stove_temp;			// current stove temperature
 	t_temp meat_temp;           // current meat probe temp	
-	t_temp board_temp           // ambient temp of board environment
-} t_context
+	t_temp board_temp;           // ambient temp of board environment
+} t_context;
 
 t_context ctx;
 
-/* 
+// TODO implement an ambient temp sensor for the board
+//#define BOARD_THERM_PIN A5 	
+
+#ifdef BREADBOARD
+#define STOVE_THERM_PIN A7 	// oven temp sensor 
+#define MEAT_THERM_PIN  A0 	// meat temp sensor
+#define SET_POT_PIN 	A3 	// set target temp
+#define STOVE_RELAY_PIN 5 	// relay switch for stove heating element
+#define STOVE_LED_PIN 	4   	// LED indicator lamp for stove heating element
+#else  
+// See Nano Interface Board wire graph
+#define STOVE_THERM_PIN A0 	// oven temp sensor 
+#define STOVE_RELAY_PIN A1 	// relay switch for stove heating element
+#define SET_POT_PIN     A2 	// set target temp
+#define MAIN_SWITCH_PIN	A3 	// main switch (used as digital input)
+#define LIGHT_SWITCH_PIN A4 	// light switch
+#define MEAT_THERM_PIN  A5	// meat temp sensor
+#define STOVE_LED_PIN   A6   	// LED indicator lamp (red) for stove heating element
+#define MAIN_LED_PIN    A7   	// LED indicator lamp (blue)for main switch
+#define OLED_RS  4   		// OLED Register Select
+#define OLED_E   6   		// OLED Enable
+#define OLED_DB4 7   		// OLED Data Bus 4
+#define OLED_DB5 8   		// OLED Data Bus 5
+#define OLED_DB6 9   		// OLED Data Bus 6
+#define OLED_DB7 10   		// OLED Data Bus 7
+#endif
+
+
+
+/* mwd - replaced following constants with above defines from ThermoSetter.ino
 	Define global constants for pins. keep this in sync with the board design.
-*/
-const int stove_sensor_pin = A0;  // thermistor to get oven temp
-const int meat_sensor_pin  = A2;  // thermistor to get meat temp
+
+const int STOVE_THERM_PIN = A0;  // thermistor to get oven temp
+const int MEAT_THERM_PIN  = A2;  // thermistor to get meat temp
 const int board_sensor_pin = A4;  // thermistor to get board environment temp
-const int target_pot_pin   = A6;  // potentiometer to set target temp
-const int power_switch_pin = A7;  // switch to indicate controller is active
+const int SET_POT_PIN   = A6;  // potentiometer to set target temp
+const int MAIN_SWITCH_PIN = A7;  // switch to indicate controller is active
 const int power_led_pin    = D1;  // indicator LED for controller is active
 const int stove_led_pin    = D2;  // indicator LED for oven relay state
 const int light_led_pin    = D3;  // indicator LED light relay state
@@ -113,6 +146,7 @@ const int stove_relay_pin  = D5;  // oven relay state on(HIGH)/off(LOW)
 const int light_relay_pin  = D6;  // light relay state on(HIGH)/off(LOW)
 // LCD module library uses pins D7-D12 inclusive
 const int display_power_pin = D13: // OLED display module power pin
+*/
 
 /*
 	Define the thermistor sensors and their parameters.
@@ -123,14 +157,14 @@ typedef struct {
 	float res;   		// resistance class of the thermistor
 	float cA, cB, cC; 	// Steinhart-Hart coefficients for this device
 	int pin;			// pin assignment on the board
-} t_thermistor
+} t_thermistor;
 
 const t_thermistor stove_therm = {
 	.res = 10000, 
 	.cA = 1.009249522e-03, 
 	.cB = 2.378405444e-04, 
 	.cC = 2.019202697e-07, 
-	.pin = stove_sensor_pin
+	.pin = STOVE_THERM_PIN
 };
 
 const t_thermistor meat_therm = {
@@ -138,16 +172,35 @@ const t_thermistor meat_therm = {
 	.cA = 1.009249522e-03, 
 	.cB = 2.378405444e-04, 
 	.cC = 2.019202697e-07, 
-	.pin = meat_sensor_pin
+	.pin = MEAT_THERM_PIN
 };
 
+#ifdef BOARD_THERM_PIN
 const t_thermistor board_therm = {
 	.res = 10000, 
 	.cA = 1.009249522e-03, 
 	.cB = 2.378405444e-04, 
 	.cC = 2.019202697e-07, 
-	.pin = board_sensor_pin
+	.pin = BOARD_THERM_PIN
 };
+#endif
+
+//
+// loop context
+//
+unsigned long time_last_measured = 0;
+unsigned long time_last_displayed = 0;
+unsigned long time_last_heater_update = 0;
+unsigned long time_last_checkpoint = 0;
+unsigned long last_minute = 0;
+unsigned long read_cnt = 0;
+float chkpt_band = 0;
+float last_chkpt_temp = 0; 
+unsigned int circular_inx = 0;
+bool stoveOn = false;
+bool displayActive = false;
+char hhmm_str[9]; 
+
 
 /* 
 	float2int()
@@ -178,12 +231,12 @@ t_temp readTemp(t_thermistor *th) {
 	t_temp temp = (1.0 / (th->cA + th->cB * log(res2) + th->cC * log(res2) * log(res2) * log(res2)));
 	temp = temp - 273.15;
 	temp = (temp * 9.0)/ 5.0 + 32.0; 
-#ifdef DEBUG
+	#if (DEBUG_LVL >= 1)
 	char strbuf[100];
 	int temp_rnd = float2int(temp);	
 	Serial.write(strbuf, snprintf(strbuf, sizeof(strbuf), 
 		"A%d:%d  %d \n", th->pin, pinval, temp_rnd) );
-#endif
+	#endif
 	
 	return temp;
 }
@@ -205,7 +258,7 @@ t_temp readTargetTemp() {
 #define TEMP_RANGE    MAX_SET_TEMP - TEMP_STANDBY  // permitted range to set temp
 
 	t_temp increment = (float) TEMP_RANGE / (float) (1024 - SET_POT_ERROR);
-	int pot_value = analogRead(target_pot_pin);
+	int pot_value = analogRead(SET_POT_PIN);
 	t_temp scaled_temp = (increment * pot_value) + TEMP_STANDBY;
 	scaled_temp = (((int) (scaled_temp + 2.5)) / 5) * 5; // round to 5 deg F
 	return scaled_temp;
@@ -219,9 +272,9 @@ t_temp readTargetTemp() {
 boolean isTargetValid() {
 	ctx.target_pot_temp = readTargetTemp();
 	if (ctx.target_pot_temp == ctx.stove_target_temp) {
-		return TRUE;
-	else
-		return FALSE;
+		return true;
+	} else {
+		return false;
 	}
 }
 
@@ -229,40 +282,107 @@ boolean isTargetValid() {
 	isPowerSwitchOn() reads the power switch pin. Return the boolean result.
 */
 boolean isPowerSwitchOn() {
-	int switch = analogRead(power_switch_pin);
-	if (switch == HIGH) {
-		return TRUE;
+	if (HIGH == analogRead(MAIN_SWITCH_PIN)) {
+		return true;
 	} else {
-		return FALSE;
+		return false;
 	}
 }
 
+/*  mwd copied the display handling from ThermoSetter
 void setDisplayOn() {
-	digitalOut(display_power_pin, HIGH);
+	digitalWrite(display_power_pin, HIGH);
 }
 
 void setDisplayOff() {
-	digitalOut(display_power_pin, LOW);
+	digitalWrite(display_power_pin, LOW);
+}
+*/
+
+/*
+	quiesceDisplay()
+	This gives the appearance of turning the display off. The temperature setting
+	potentiometer has a switch which when turned off (passing through the STANDBY
+	low temperature setting) will cause the sceen to go blank. For an OLED this
+	looks like the power to the module is off. 
+*/
+void quiesceDisplay() {	
+	#if (DEBUG_LVL >= 1)
+	Serial.print("==> Quiesce Display\n");
+	#endif	
+	
+	lcd.noDisplay();
+	digitalWrite(MAIN_LED_PIN, LOW);
+	displayActive = false;
+}
+
+/*
+	resetDisplay()
+	This gives the appearance of turning the screen on.  
+	The user can address screen corruption caused by transients in 
+	the circuits by turning the switch off then on without losing the elapsed time.
+*/
+void resetDisplay() {
+	#if (DEBUG_LVL >= 1)
+	Serial.print("==> Reset Display\n");
+	#endif	
+	digitalWrite(MAIN_LED_PIN, HIGH);
+
+	lcd.display();
+	lcd.clear();
+	lcd.setCursor(0, 0);
+	lcd.print(PROGRAM_NAME);
+	delay(1000);
+	lcd.setCursor(0, 1);
+	if (time_last_measured == 0) {
+		lcd.print("Set temp");
+	} else {
+		lcd.print("Display reset");
+	}
+	delay(5000);
+	lcd.clear();
+	displayActive = true;
+}
+
+/* mwd copied stove handling from ThermoSetter
+void setStoveOn() {
+	digitalWrite(stove_relay_pin, HIGH);
+	digitalWrite(stove_led_pin, HIGH);
+}
+void setStoveOff() {
+	digitalWrite(stove_relay_pin, LOW);
+	digitalWrite(stove_led_pin, LOW);
+}
+*/
+
+bool isStoveOn() {
+	return stoveOn;
 }
 
 void setStoveOn() {
-	digitalOut(stove_relay_pin, HIGH);
-	digitalOut(stove_led_pin, HIGH);
+	stoveOn = true;
+	digitalWrite(STOVE_RELAY_PIN, HIGH);
+	digitalWrite(STOVE_LED_PIN, HIGH);
+	#if (DEBUG_LVL >= 2)
+	Serial.print("==> setStoveOn() \n");
+	#endif	
 }
 
 void setStoveOff() {
-	digitalOut(stove_relay_pin, LOW);
-	digitalOut(stove_led_pin, LOW);
+	stoveOn = false;
+	digitalWrite(STOVE_RELAY_PIN, LOW);
+	digitalWrite(STOVE_LED_PIN, LOW);
+	#if (DEBUG_LVL >= 2)
+	Serial.print("==> setStoveOff() \n");
+	#endif	
 }
 
 void setLightOn() {
-	digitalOut(light_relay_pin, HIGH);
-	digitalOut(light_led_pin, HIGH);
+	digitalWrite(LIGHT_SWITCH_PIN, HIGH);
 }
 
 void setLightOff() {
-	digitalOut(light_relay_pin, LOW);
-	digitalOut(light_led_pin, LOW);
+	digitalWrite(LIGHT_SWITCH_PIN, LOW);
 }
 
 /*
@@ -315,20 +435,20 @@ void displayStatus(){
 	lcd.print(meat_temp_str);
 	
 	// indicate current state
-	lcd.setcursor(15,0);
+	lcd.setCursor(15,0);
 	lcd.print((int) ctx.state);
 	
 
 // TODO consider adding an LED pin for STANDBY
 // TODO Consider adding status characters for each state to the right side of the display
 
-#ifdef DEBUG
+	#if (DEBUG_LVL >= 1)
 	char strbuf[100];
 	size_t n = snprintf(strbuf, sizeof(strbuf), 
 		"HH:MM %s  %s  %s  %s \n", 
-		hhmm_str, stove_temp_str, meat_temp_str, set_temp_str);
-	Serial.write(strbuf, (n >= sizeof(strbuf))? sizeof(strbuf) : n;
-#endif
+		hhmm_str, stove_temp_str, meat_temp_str, target_temp_str);
+	Serial.write(strbuf, (n >= sizeof(strbuf))? sizeof(strbuf) : n);
+	#endif
 	
 }
 
@@ -344,31 +464,38 @@ void setup() {
   analogReference(EXTERNAL);  // tell the board that an external power source is applied to the AREF pin
   // discard a few reads as per spec.
   for (int i=0; i>3; i++) {
-    analogRead(stove_sensor_pin );
-    analogRead(meat_sensor_pin  );
-    analogRead(board_sensor_pin );
-    analogRead(target_pot_pin   );
-    analogRead(power_switch_pin );
+    analogRead(STOVE_THERM_PIN );
+    analogRead(MEAT_THERM_PIN  );
+    analogRead(SET_POT_PIN   );
+    analogRead(MAIN_SWITCH_PIN );
+	#ifdef BOARD_THERM_PIN
+    analogRead(BOARD_THERM_PIN );
+	#endif
   }
 #endif
 	
-#ifdef DEBUG
+	#if (DEBUG_LVL >= 1)
 	Serial.begin(9600);
 	while (!Serial) {}  // wait for serial port to initialize
 	Serial.println("Starting Smoker Controller");
-#endif
+	#endif
 
 	initContext();
 
 	// Declare I/O status of digital pins
-	pinMode(power_led_pin , OUTPUT);
-	pinMode(stove_led_pin, OUTPUT);
-	pinMode(light_led_pin, OUTPUT);
-	pinMode(meat_bias_pin, OUTPUT);
-	pinMode(stove_relay_pin, OUTPUT);
-	pinMode(light_relay_pin, OUTPUT);
+	pinMode(MAIN_LED_PIN , OUTPUT);
+	pinMode(STOVE_LED_PIN, OUTPUT);
+	pinMode(STOVE_RELAY_PIN, OUTPUT);
+	pinMode(LIGHT_SWITCH_PIN, OUTPUT);
+/* mwd: the display is always at Vss. Display off now via LiquidCrystal API
 	pinMode(display_power_pin, OUTPUT);
-
+*/
+/* mwd: board revision - now wired to Vss
+	pinMode(meat_bias_pin, OUTPUT);  
+*/
+/* mwd: was used on breadboard but don't need an indicator for the light
+	pinMode(light_led_pin, OUTPUT);
+*/
 	lcd.begin(16, 2);
 	delay(500);
 	lcd.setCursor(0, 0);
@@ -393,7 +520,9 @@ void setup() {
 void loop() {
 
 	ctx.alive_time = millis();
+	#ifdef BOARD_THERM_PIN
 	ctx.board_temp = readTemp(&board_therm);
+	#endif
 	ctx.stove_temp = readTemp(&stove_therm);
 
 	/* TODO Determine whether or not to continuously power the meat thermistor.
@@ -426,9 +555,9 @@ void loop() {
 			break;
 		default:
 			ctx.state = BEGIN;
-#ifdef DEBUG
+			#if (DEBUG_LVL >= 1)
 			Serial.println("Invalid state. Reverting to BEGIN "); 
-#endif
+			#endif
 	}
 	/* TODO determine if a delay is needed
 		An argument against delay is that the system responds much faster than the user
@@ -453,15 +582,16 @@ void loop() {
 */
 t_state beginState() {
 	initContext();
-#ifdef DEBUG
+	#if (DEBUG_LVL >= 1)
 	Serial.println("state: BEGIN "); 
-#endif
-	setDisplayOff();
+	#endif
+	quiesceDisplay();
 	setStoveOff();
 	setLightOff();
+/* mwd: the meat thermistor is now wired to be HIGH at all times
 	// TODO decide whether the meat sensor is always powered, by setting the bias pin HiGH, or only when being read.
-	digitalOut(meat_bias_pin, LOW);
-
+	digitalWrite(meat_bias_pin, LOW);
+*/
 	if (isPowerSwitchOn()){
 		return STANDBY;
 	}
@@ -475,14 +605,14 @@ t_state beginState() {
 */
 t_state standbyState() {
 
-#ifdef DEBUG
+	#if (DEBUG_LVL >= 1)
 	Serial.println("state: STANDBY "); 
-#endif
+	#endif
 
-	setDisplayOn();
+	resetDisplay();
 	setStoveOff();
 
-	if (! isPowerSwitchOn())) {
+	if (! isPowerSwitchOn() ) {
 		return BEGIN;
 	}
 
@@ -508,9 +638,9 @@ t_state setmodeState() {
 
 #define SETMODE_TIME_TO_WAIT 1000
 
-#ifdef DEBUG
+	#if (DEBUG_LVL >= 1)
 	Serial.println("state: SETMODE "); 
-#endif
+	#endif
 
 	// Don't know how long we'll be in setmode so turn off the heating element to be safe
 	setStoveOff();
@@ -549,9 +679,9 @@ t_state setmodeState() {
 	value, then we can fuzzy the comparison test. That's what a PID algorithm does.
 */
 t_state sessionState() {
-#ifdef DEBUG
+	#if (DEBUG_LVL >= 1)
 	Serial.println("state: SESSION "); 
-#endif
+	#endif
 	// TODO Is it possible to turn off switch while isTargetValid() is true?
 	if (! isPowerSwitchOn()) {
 		return BEGIN;
